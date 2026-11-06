@@ -1,0 +1,250 @@
+name: dinov3-fold{fold}
+seed: 922
+device: cuda
+use_amp: true
+debug: false
+wandb_enabled: false
+wandb:
+  mode: disabled
+model: protoprostate_medsam
+model_kw:
+  backbone: dinov3_backbone_wrapper_for_feature_maps
+  backbone_kw:
+    adapter_dim: 256
+    backbone_cfg:
+      name: dinov3_vitl16
+      weights: ???
+  feature_dim: 1024
+  num_classes: 3
+  prototypes_per_class: 10
+  num_subprototypes: 4
+  adjacency_radius: 1
+  matching_pool_kernel: 3
+  slot_temperature: 1.0
+  coverage_min_cancer_involvement: 0.4
+  grade_thresholds: []
+  matching_mode: occurrence
+  occurrence_hidden_dim: 128
+  num_uncertainty_prototypes: 0
+  clinical_prompts: false
+  prompt_conditioning: true
+  within_core_reference_subtraction: false
+  prototype_search_region: prostate
+  prototype_search_dilation: 0
+  needle_constrained_prototype_fraction: 0.5
+  needle_anchor_dilation: 2
+  needle_axis_bins: 32
+  classification_target: three_way
+  share_core_classifier: true
+  connected_greedy: false
+  greedy_connectivity: 4
+  greedy_straight_through_temperature: 0.0
+  lock_projected_prototypes: false
+  freeze_encoder: true
+  occurrence_temperature: 0.5
+  learnable_occurrence_temperature: true
+  hyperbolic_needle: true
+  hyperbolic_geometry: hyperbolic
+  hyperbolic_embedding_dim: 64
+  hyperbolic_axis_bins: 16
+  hyperbolic_transformer_layers: 1
+  hyperbolic_transformer_heads: 4
+  hyperbolic_prototypes_per_grade: 2
+  hyperbolic_curvature: 1.0
+  hyperbolic_radius_min: 0.05
+  hyperbolic_radius_max: 2.5
+  hyperbolic_distance_temperature: 0.5
+  hyperbolic_fusion_max_scale: 0.3
+  hyperbolic_fusion_initial_scale: 0.05
+  hyperbolic_projection_q_tolerance: 0.2
+  prompt_hidden_dim: 128
+  prompt_feature_scale: 0.2
+  prompt_spatial_scale: 1.0
+  prostate_token_min_fraction: 0.5
+  occurrence_locality_sigma_tokens: 1.0
+  occurrence_locality_strength: 1.0
+  occurrence_region_target_tokens: 16.0
+  center_adversarial_num_centers: 0
+  center_adversarial_num_states: 3
+  center_adversarial_hidden_dim: 64
+  dense_endpoint_head: false
+  dense_endpoint_hidden_dim: 128
+  dense_endpoint_use_involvement: true
+  dense_endpoint_residual_max_scale: 0.35
+  dense_endpoint_residual_initial_scale: 0.05
+  dense_endpoint_residual_fixed_scale: null
+  hyperbolic_structured_needle_selection: true
+  hyperbolic_target_mode: grade5
+  hyperbolic_base_logit_scale: 1.0
+  hyperbolic_fusion_fixed_scale: 1.0
+  needle_prototype_classifier: false
+  semantic_anchor_dim: 256
+  semantic_anchor_hidden_dim: 128
+  semantic_anchor_temperature_init: 0.07
+  semantic_anchor_temperature_min: 0.02
+  semantic_anchor_temperature_max: 0.5
+  semantic_anchor_bank_path: ???
+  semantic_anchor_direct_head: true
+  semantic_anchor_fusion_max_scale: 0.15
+  semantic_anchor_fusion_initial_scale: 0.03
+  prost_rl_endpoint_head: true
+  prost_rl_endpoint_use_involvement: true
+  prost_rl_endpoint_residual_max_scale: 0.35
+  prost_rl_endpoint_residual_initial_scale: 0.05
+  prost_rl_endpoint_residual_fixed_scale: null
+  unique_prototype_projection: true
+  prototype_projection_candidate_limit: 512
+  hyperbolic_unique_projection: true
+  hyperbolic_projection_candidate_limit: 512
+data:
+  fold: 0
+  n_folds: 5
+  exclude_benign_cores_from_positive_patients: true
+  batch_size: 4
+  num_workers: 8
+  train_subsample_seed: 42
+  augmentations: translate
+  image_size: 256
+  mask_size: 64
+  limit_train_data: null
+  mean:
+  - 0.485
+  - 0.456
+  - 0.406
+  std:
+  - 0.229
+  - 0.224
+  - 0.225
+  flip_ud: false
+  grade_patient_balanced_sampling: false
+  grade_sampling_power: 0.5
+  center_sampling_power: 0.25
+  patient_grouped_batches: false
+  cores_per_patient: 2
+  center_balanced_sampling: false
+  manifest: ???
+  prompt_stats: prost_rl
+loss: needle_axis_thresholded_involvement_entropy_reg
+loss_kw:
+  threshold: 0.5
+  soft_temperature: 0.05
+  tolerance_margin: 0.05
+  benign_tolerance_margin: 0.01
+  soft_mean_weight: 0.25
+  benign_bce_weight: 0.25
+  entropy_penalty_lambda: 0.02
+  axis_bins: 32
+  axis_contiguity_weight: 0.01
+add_image_clf: true
+image_clf_mode: three_way
+image_clf_class_weight: balanced
+task_loss_weights:
+  heatmap: 1.0
+  classification: 1.0
+outside_prostate_penalty: false
+treat_gg1_as_benign: false
+pos_weight: 1.0
+prototype_ce_weight: 0.0
+involvement_weight_classification: false
+grade_loss_weight: 0.0
+grade_monotonic_weight: 0.0
+patient_same_state_weight: 0.0
+patient_rank_weight: 0.0
+warmup_epochs: 3
+joint_epochs: 35
+slot_epochs: 0
+unfreeze_adapters: false
+prototype_lr: 0.0002
+head_lr: 0.0001
+adapter_lr: 0.0
+slot_lr: 0.0003
+weight_decay: 0.001
+accumulate_grad_steps: 4
+projection_every_n_epochs: 5
+selection_metric: prototype_endpoint_mean_auc
+early_stopping_patience: 10
+early_stopping_min_delta: 0.0001
+prototype_loss_weights:
+  image_only_ce: 0.25
+  conditioned_image_ce: 0.0
+  prompt_only_ce: 0.05
+  pca_endpoint_ce: 0.5
+  cspca_endpoint_ce: 0.5
+  high_involvement_endpoint_ce: 0.25
+  cluster: 0.25
+  separation: 0.05
+  grade_cluster: 0.0
+  coherence: 0.01
+  orthogonality: 0.002
+  coverage: 0.1
+  anchor: 0.25
+  slot_sparsity: 0.0
+  slot_binarization: 0.0
+  l1: 0.002
+  grade_l1: 0.0
+  occurrence_overlap: 0.01
+  occurrence_entropy: 0.005
+  occurrence_region_area: 0.03
+  occurrence_region_compactness: 0.005
+  occurrence_region_cohesion: 0.01
+  occurrence_region_tv: 0.0
+slot_temperature_start: 1.0
+slot_temperature_end: 15.0
+slot_loss_weights:
+  coverage: 0.2
+  anchor: 0.0
+  slot_sparsity: 0.02
+  slot_binarization: 0.02
+slot_prune_threshold: 0.5
+min_slots_per_prototype: 4
+last_layer_epochs: 4
+last_layer_lr: 2.0e-05
+last_layer_l1: 0.005
+last_layer_selection_metric: prototype_endpoint_mean_auc
+last_layer_patience: 4
+projection_tracked_metric: prototype_endpoint_mean_auc
+include_patient_metrics: true
+abstention_loss_weight: 0.0
+hyperbolic_involvement_tolerance: 0.075
+hyperbolic_rank_min_gap: 0.15
+hyperbolic_rank_margin: 0.05
+hyperbolic_angular_temperature: 0.1
+hyperpas_temperature: 0.1
+hyperbolic_loss_weights:
+  grade_ce: 0.35
+  angular_ce: 0.15
+  radial: 0.75
+  benign_root: 0.25
+  ordinal_rank: 0.2
+  hyperpas: 0.01
+  prototype_order: 0.05
+  anchor_usage: 0.02
+  selection: 0.02
+pathology_geometry_loss_weight: 0.0
+pathology_manifold_loss_weight: 0.0
+semantic_anchor_loss_weight: 0.05
+pathology_grade_distill_weight: 0.0
+center_adversarial_loss_weight: 0.0
+gradient_clip_norm: 1.0
+ordinal_domain_loss_weight: 0.0
+encoder_unfreeze_mode: full
+hyperbolic_benign_involvement_tolerance: 0.02
+hyperbolic_selection_cohesion: 0.5
+semantic_anchor_bank_path: ???
+semantic_anchor_core_weight: 1.0
+semantic_anchor_prototype_weight: 1.0
+semantic_anchor_reverse_weight: 0.5
+semantic_anchor_bridge_weight: 0.05
+semantic_anchor_endpoint_weight: 0.5
+semantic_anchor_consistency_weight: 0.1
+encoder_lr: 1.0e-06
+semantic_anchor_last_layer_alignment: true
+semantic_anchor_transport_weight: 0.5
+semantic_anchor_transport_iterations: 8
+semantic_anchor_transport_relation_weight: 0.1
+semantic_anchor_transport_entropy_weight: 0.005
+semantic_anchor_margin: 0.1
+semantic_anchor_margin_weight: 0.5
+supervised_endpoint_checkpoint: ???
+amp_dtype: bfloat16
+wandb_url: null

@@ -25,13 +25,18 @@ from .utils import device
 
 
 @torch.no_grad()
-def extract(det, ck, table, dev, batch_size=16, num_workers=4):
+def extract(det, ck, table, dev, batch_size=16, num_workers=4, enc_det=None):
+    """``enc_det``: optional second detector whose image encoder gives the enc grid (ctx always comes from ``det``)."""
     ds = D.CoreDataset(table, ck['prompt_stats'], ck['mean'], ck['std'], image_size=ck['image_size'], mask_size=64)
     meta = {k: [] for k in ('core_id', 'patient_id', 'center')}
     gg, inv, pm, nm, dc, de, occ = [], [], [], [], [], [], []
     det.eval()
     for b in DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=num_workers):
-        out = det(b['image'].to(dev).float(), b['prompts'].to(dev), return_tokens=True)
+        image = b['image'].to(dev).float()
+        out = det(image, b['prompts'].to(dev), return_tokens=True,
+                  prostate_mask=b['prostate_mask'].to(dev), needle_mask=b['needle_mask'].to(dev))
+        if enc_det is not None:
+            out['enc'] = enc_det.encoder(image).flatten(2).transpose(1, 2)
         p, n = b['prostate_mask'][:, 0] > .5, b['needle_mask'][:, 0] > .5
         reg = torch.zeros(len(p), len(P.REGIONS), 64, 64, dtype=torch.bool)
         has = p.flatten(1).any(1)  # empty prostate masks give empty regions -> excluded below
@@ -47,9 +52,11 @@ def extract(det, ck, table, dev, batch_size=16, num_workers=4):
     c = dict(meta, grade_group=torch.cat(gg).long(), involvement=torch.cat(inv).float(), prostate64=torch.cat(pm),
              needle64=torch.cat(nm), desc_ctx=torch.cat(dc), desc_enc=torch.cat(de), occupancy=torch.cat(occ))
     c['valid'] = P.validity(c['occupancy'])
-    keep = P.usable(c['valid'])
+    finite = torch.isfinite(c['desc_ctx'].float()).flatten(1).all(1) & torch.isfinite(c['desc_enc'].float()).flatten(1).all(1)
+    keep = P.usable(c['valid']) & finite
     excluded = pd.DataFrame(dict(core_id=[k for k, ok in zip(c['core_id'], keep) if not ok],
-                                 reason='no needle track or no valid sector in the 64x64 masks'))
+                                 reason=['no needle track or no valid sector in the 64x64 masks' if not u else 'non-finite tokens'
+                                         for u, ok in zip(P.usable(c['valid']).tolist(), keep.tolist()) if not ok]))
     idx = torch.nonzero(keep).flatten().tolist()
     c = {k: (v[keep] if torch.is_tensor(v) else [v[i] for i in idx]) for k, v in c.items()}
     return c, excluded
@@ -69,7 +76,8 @@ def parse_external(items):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--detector', required=True)
+    p.add_argument('--detector', required=True, help='detector giving the ctx grid (and the enc grid by default)')
+    p.add_argument('--enc-detector', help='optional detector whose image encoder gives the enc grid (e.g. Prost-RL RL stage)')
     p.add_argument('--manifest', required=True, help='development manifest (cohort used for cross-validation)')
     p.add_argument('--out', required=True)
     p.add_argument('--external', nargs='*', default=[], help='extra manifests as path:name (scored, never trained on)')
@@ -79,6 +87,13 @@ def main():
     dev = device()
     det, ck = load_detector(a.detector)
     det.to(dev)
+    enc_det = None
+    if a.enc_detector:
+        enc_det, eck = load_detector(a.enc_detector)
+        assert (eck['encoder'], tuple(eck['mean']), tuple(eck['std']), eck['image_size']) == \
+            (ck['encoder'], tuple(ck['mean']), tuple(ck['std']), ck['image_size']), 'detectors use different inputs'
+        assert (eck['fold'], eck['n_folds']) == (ck['fold'], ck['n_folds']), 'detectors come from different folds'
+        enc_det.to(dev).eval()
     df = D.read_manifest(a.manifest)
     if 'fold' not in df.columns:
         df = D.assign_folds(df, ck['n_folds'])
@@ -89,13 +104,13 @@ def main():
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     summary = {}
     for name, table in splits.items():
-        c, excluded = extract(det, ck, table, dev, a.batch_size, a.num_workers)
+        c, excluded = extract(det, ck, table, dev, a.batch_size, a.num_workers, enc_det)
         c.update(encoder=ck['encoder'], fold=ck['fold'], split=name)
         torch.save(c, out / f'{name}.pt')
         excluded.to_csv(out / f'excluded_{name}.csv', index=False)
         summary[name] = dict(cores=len(c['core_id']), patients=len(set(c['patient_id'])), excluded=len(excluded))
         print(name, summary[name], flush=True)
-    (out / 'summary.json').write_text(json.dumps(dict(detector=str(a.detector), **summary), indent=1))
+    (out / 'summary.json').write_text(json.dumps(dict(detector=str(a.detector), enc_detector=a.enc_detector, **summary), indent=1))
 
 
 if __name__ == '__main__':

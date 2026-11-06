@@ -79,7 +79,9 @@ def main():
     weights = cfg.get('encoder_weights') or (cfg['medsam_checkpoint'] if cfg['encoder'] == 'medsam' else None)
     det = build_detector(cfg['encoder'], weights, cfg['medsam_checkpoint'])
     if cfg.get('init_decoders_from'):
-        det.load_decoders_from(torch.load(cfg['init_decoders_from'], map_location='cpu', weights_only=False)['state_dict'])
+        skipped = det.load_decoders_from(torch.load(cfg['init_decoders_from'], map_location='cpu', weights_only=False)['state_dict'])
+        if skipped:
+            print(f'decoders initialized from {cfg["init_decoders_from"]}; kept fresh: {skipped}')
     det.to(dev)
     tl, vl, stats, train, val = loaders(cfg, a.manifest, a.fold, det.mean, det.std)
     groups = [dict(params=det.encoder_parameters(), lr=cfg['encoder_lr']), dict(params=det.head_parameters(), lr=cfg['lr'])]
@@ -114,7 +116,7 @@ def main():
         print(json.dumps(row), flush=True)
         if metrics['val_score'] > best:
             best = metrics['val_score']
-            torch.save(dict(state_dict=det.state_dict(), encoder=cfg['encoder'], prompts=det.prompts, prompt_stats=stats,
+            torch.save(dict(state_dict=det.state_dict(), encoder=cfg['encoder'], prompts=det.prompts, num_classes=3, prompt_stats=stats,
                             mean=det.mean, std=det.std, image_size=cfg['image_size'], fold=a.fold, epoch=epoch,
                             exclude_benign_from_positive_patients=cfg['exclude_benign_from_positive_patients'],
                             n_folds=cfg['n_folds'], **metrics), out / 'best.pth')

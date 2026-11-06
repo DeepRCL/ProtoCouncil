@@ -10,11 +10,12 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = ["torch>=2.4", "torchvision>=0.19", "numpy", "pandas", "scipy", "scikit-learn", "pillow", "pyyaml",
-                "einops", "timm", "matplotlib"]
+                "einops", "timm", "matplotlib", "omegaconf", "tqdm"]
 
 [tool.setuptools.packages.find]
-include = ["protocouncil*"]
+include = ["protocouncil*", "research_detector*"]
 
 [tool.setuptools.package-data]
 "protocouncil.models.sam" = ["LICENSE"]
 "protocouncil.models.vjepa" = ["LICENSE"]
+"research_detector" = ["configs/*.yaml"]

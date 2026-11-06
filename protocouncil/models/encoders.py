@@ -128,6 +128,7 @@ VJEPA_INACTIVE = ('encoder.patch_embed.', 'encoder.video_mod_embed', 'encoder.no
 class VJEPAEncoder(nn.Module):
     out_dim = 1024
     mean, std = IMAGENET_MEAN, IMAGENET_STD
+    inactive_parameter_prefixes = VJEPA_INACTIVE
 
     def __init__(self, weights=None, arch='vjepa2_1_vit_large_384', input_size=256):
         super().__init__()
@@ -140,6 +141,8 @@ class VJEPAEncoder(nn.Module):
                 state = {k.replace('module.', '').replace('backbone.', ''): v for k, v in state['ema_encoder'].items()}
             elif 'encoder_state_dict' in state:  # exported by protocouncil.adapt
                 state = {k[len('encoder.'):]: v for k, v in state['encoder_state_dict'].items() if k.startswith('encoder.')}
+            elif isinstance(state.get('encoder'), dict):  # {'encoder': state_dict, ...} backbone export
+                state = state['encoder']
             msg = self.encoder.load_state_dict(state, strict=True)
             assert not msg.missing_keys and not msg.unexpected_keys, msg
         for name, p in self.named_parameters():

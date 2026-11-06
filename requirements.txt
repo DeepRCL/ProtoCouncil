@@ -9,3 +9,5 @@ pyyaml
 einops
 timm
 matplotlib
+omegaconf
+tqdm

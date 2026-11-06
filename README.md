@@ -24,13 +24,15 @@ This repository contains the code to train ProtoCouncil on your own data and app
 ```
 protocouncil/
   data.py            CSV manifest, patient-level folds, clinical-prompt scaling, image and mask preprocessing
+  import_prostrl.py  use trained Prost-RL models as the MedSAM detector
   adapt.py           DINOv3 / V-JEPA 2.1 backbone adaptation with a dense involvement head
-  train_detector.py  prompt-conditioned detector training (heatmap involvement loss + three-class cross-entropy)
-  extract.py         frozen detector -> encoder (enc) and prompt-conditioned (ctx) token grids -> region descriptors
+  train_detector.py  prompt-conditioned detector (heatmap involvement loss + three-class cross-entropy)
+  extract.py         frozen detector(s) -> encoder (enc) and prompt-conditioned (ctx) token grids -> region descriptors
   train_heads.py     anatomical prototype head: training, projection onto training regions, final-layer refit
   council.py         label-free fusion, csPCa thresholds, encoder-disagreement gate, evaluation
   explain.py         per-core prototype contributions and their training exemplars
   models/            detector, encoders, prototype head; vendored SAM (Apache-2.0) and V-JEPA 2.1 (MIT) modules
+research_detector/   exact training recipe of the paper's DINOv3 and V-JEPA 2.1 detectors (research code)
 configs/             detector and backbone-adaptation settings for each encoder
 scripts/             run_fold.sh (one fold, all stages) and run_all.sh (five folds + evaluation)
 tests/               unit tests (CPU, no data or weights needed)
@@ -79,26 +81,35 @@ Relative paths are resolved from the manifest's folder. Images of all cohorts sh
 `scripts/run_fold.sh` runs every stage for one fold, and `scripts/run_all.sh` runs the five folds, sets the thresholds and evaluates:
 
 ```bash
+PROSTRL_SUP='prostrl/PPO-supervised-baseline-fold{fold}/best_rl.pth' \
+PROSTRL_RL='prostrl/EXP4-pairwise-ranking-rl-fold{fold}/best_rl.pth' \
 bash scripts/run_all.sh data/cohort_a.csv data/cohort_b.csv:cohort_b data/cohort_c.csv:cohort_c
 ```
 
 The stages for fold `k`:
 
-1. **Detectors.** Each foundation model is fine-tuned on the training folds as a prompt-conditioned detector (ProstNFound+ style): image tokens and clinical prompt tokens meet in a SAM mask decoder, which predicts a cancer heatmap supervised by core involvement inside the needle track, and in a class decoder that predicts benign / GG1-2 / GG ≥ 3. MedSAM is tuned through adapters. DINOv3 and V-JEPA 2.1 are first adapted with a dense involvement head (`protocouncil.adapt`), then trained as detectors whose decoders start from the MedSAM detector of the same fold.
+1. **Detectors.** Each foundation model is fine-tuned on the training folds as a prompt-conditioned cancer detector: image tokens and clinical prompt tokens meet in a decoder that predicts a cancer heatmap, supervised by core involvement inside the needle track, and in class decoders that predict cancer and csPCa. Each detector gives two 16×16 token grids: image features from the encoder (`enc`) and prompt-conditioned features from the class decoder (`ctx`). Every route below ends with a `ctx.pth` and an `enc.pth` per encoder and fold.
+   - **MedSAM: Prost-RL.** As in the paper, the MedSAM branch uses [Prost-RL](https://github.com/DeepRCL/Prost-RL). Train it for each fold with the same patient folds, following its README (supervised warm-up, then the RL stage). Then import both checkpoints: the supervised one gives the context grid and the RL one the encoder grid.
+     ```bash
+     python -m protocouncil.import_prostrl --supervised prostrl/PPO-supervised-baseline-fold0/best_rl.pth \
+         --rl prostrl/EXP4-pairwise-ranking-rl-fold0/best_rl.pth --fold 0 --out runs/detectors/medsam/fold0
+     ```
+     Without Prost-RL, `train_detector --config configs/detector_medsam.yaml` trains a ProstNFound+-style MedSAM detector (adapters only).
+   - **DINOv3 and V-JEPA 2.1.** The backbone is first adapted with a dense involvement head (`protocouncil.adapt`). The detector is then trained on top of it, with its decoders initialized from the MedSAM detector of the same fold.
+     ```bash
+     python -m protocouncil.adapt --config configs/adapt_dinov3.yaml --weights checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth \
+         --manifest data/cohort_a.csv --fold 0 --out runs/adapt/dinov3/fold0
+     python -m protocouncil.train_detector --config configs/detector_dinov3.yaml --manifest data/cohort_a.csv --fold 0 \
+         --medsam-checkpoint checkpoints/medsam_vit_b.pth --encoder-weights runs/adapt/dinov3/fold0/encoder.pth \
+         --init-decoders-from runs/detectors/medsam/fold0/ctx.pth --out runs/detectors/dinov3/fold0
+     ```
+     This trains a minimal detector: the backbone, a three-class class decoder and the involvement heatmap. [`research_detector/`](research_detector) contains the exact recipe of the paper's DINOv3 and V-JEPA 2.1 detectors, which adds auxiliary training terms from our earlier experiments; select it with `DETECTOR=research` in the scripts.
+2. **Region descriptors.** The detectors are frozen and their token grids are pooled over anatomical regions. The gland, needle track (needle trace ∩ gland) and six sectors (posterior/anterior halves by per-column depth × three equal-area thirds) are built from each core's own masks, and every region is described by the mean and the channel-wise maximum of its tokens.
    ```bash
-   python -m protocouncil.train_detector --config configs/detector_medsam.yaml --manifest data/cohort_a.csv --fold 0 \
-       --medsam-checkpoint checkpoints/medsam_vit_b.pth --out runs/detectors/medsam/fold0
-   python -m protocouncil.adapt --config configs/adapt_dinov3.yaml --weights checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth \
-       --manifest data/cohort_a.csv --fold 0 --out runs/adapt/dinov3/fold0
-   python -m protocouncil.train_detector --config configs/detector_dinov3.yaml --manifest data/cohort_a.csv --fold 0 \
-       --medsam-checkpoint checkpoints/medsam_vit_b.pth --encoder-weights runs/adapt/dinov3/fold0/encoder.pth \
-       --init-decoders-from runs/detectors/medsam/fold0/best.pth --out runs/detectors/dinov3/fold0
+   python -m protocouncil.extract --detector runs/detectors/medsam/fold0/ctx.pth --enc-detector runs/detectors/medsam/fold0/enc.pth \
+       --manifest data/cohort_a.csv --out runs/packs/medsam/fold0 --external data/cohort_b.csv:cohort_b
    ```
-2. **Token grids and region descriptors.** Each detector is frozen and gives two 16×16 token grids: image features from the encoder (`enc`) and prompt-conditioned features from the class decoder (`ctx`). The gland, needle track (needle trace ∩ gland) and six sectors (posterior/anterior halves by per-column depth × three equal-area thirds) are built from each core's own masks, and every region is described by the mean and the channel-wise maximum of its tokens.
-   ```bash
-   python -m protocouncil.extract --detector runs/detectors/medsam/fold0/best.pth --manifest data/cohort_a.csv \
-       --out runs/packs/medsam/fold0 --external data/cohort_b.csv:cohort_b
-   ```
+   A detector trained with `train_detector` gives both grids: pass its `best.pth` as `--detector` and omit `--enc-detector`.
 3. **Anatomical prototype heads.** For each encoder: 4 prototypes per family (gland, needle, sector) and class (36 in total), class-weighted cross-entropy with cluster, separation and diversity terms, gland-family dropout (p = 0.5), early stopping on the validation fold, projection of every prototype onto a real training region of a distinct patient (Hungarian assignment), and a refit of the final layer. We train two head seeds per fold.
    ```bash
    python -m protocouncil.train_heads --packs runs/packs/medsam/fold0 --seed 7201 --out runs/heads/medsam/fold0/seed7201
@@ -139,7 +150,7 @@ Abstaining when any encoder disagrees retains 70%, 58% and 54% of the cores of c
 
 ![Results on the external cohorts](assets/results.png)
 
-**Reproducibility.** Given the same token grids, the prototype heads, projection, fusion and disagreement gate in this repository reproduce the paper's models exactly. The detector code implements the detector described in the paper. The detectors behind the reported numbers were trained in our research code and differ from it: the MedSAM token grids came from Prost-RL detectors, and the DINOv3 and V-JEPA 2.1 detectors used two binary class decoders (a 512-channel context grid) instead of one three-class decoder, a different initialization and additional auxiliary training objectives. Detectors retrained with this repository can therefore give different results from those reported in the paper.
+**Reproducibility.** Given the same token grids, the prototype heads, projection, fusion and disagreement gate in this repository reproduce the paper's models exactly. Loaded with the paper's trained detectors, `import_prostrl` (MedSAM via Prost-RL) and `research_detector` (DINOv3 and V-JEPA 2.1) reproduce the paper's region descriptors up to floating-point rounding, and the research trainer computes the same training objective as our original code. GPU training is not bit-reproducible, so retrained detectors will differ slightly from ours. The minimal DINOv3 / V-JEPA 2.1 detectors in `protocouncil` are simpler than the paper's; use `research_detector` for the exact recipe.
 
 ## Citation
 

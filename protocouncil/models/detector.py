@@ -53,12 +53,19 @@ class Detector(nn.Module):
             assert not msg.missing_keys and not msg.unexpected_keys, (name, msg)
 
     def load_decoders_from(self, detector_state):
-        """Copy prompt encoder, prompt MLPs, mask decoder and class decoder from another detector's state dict."""
+        """Copy prompt encoder, prompt MLPs, mask decoder and class decoder from another detector's state dict
+        (e.g. the MedSAM / Prost-RL detector of the same fold). Tensors whose shape differs (the output layer of a
+        class decoder with a different number of classes) keep their initialization; their names are returned."""
         keys = ('prompt_encoder.', 'prompt_mlps.', 'mask_decoder.', 'class_decoder.')
-        part = {k: v for k, v in detector_state.items() if k.startswith(keys)}
-        msg = self.load_state_dict(part, strict=False)
-        missing = [k for k in msg.missing_keys if k.startswith(keys)]
-        assert not missing and not msg.unexpected_keys, (missing, msg.unexpected_keys)
+        own = self.state_dict()
+        part = {k: v for k, v in detector_state.items() if k.startswith(keys) and k in own and v.shape == own[k].shape}
+        skipped = sorted(k for k in own if k.startswith(keys) and k not in part)
+        last = {f'class_decoder.output_cls_mlps.{i}.layers.{len(m.layers) - 1}.{w}'
+                for i, m in enumerate(self.class_decoder.output_cls_mlps) for w in ('weight', 'bias')}
+        bad = [k for k in skipped if k not in last or k not in detector_state]
+        assert not bad, ('decoder tensors missing or incompatible (only the class output layer may differ)', bad)
+        self.load_state_dict(part, strict=False)
+        return skipped
 
     def encoder_parameters(self):
         return [p for p in self.encoder.parameters() if p.requires_grad]
@@ -67,8 +74,9 @@ class Detector(nn.Module):
         enc = {id(p) for p in self.encoder.parameters()}
         return [p for p in self.parameters() if p.requires_grad and id(p) not in enc]
 
-    def forward(self, image, prompts, return_tokens=False):
-        """image [B, 3, 256, 256]; prompts [B, len(self.prompts)] (normalized values)."""
+    def forward(self, image, prompts, return_tokens=False, prostate_mask=None, needle_mask=None):
+        """image [B, 3, 256, 256]; prompts [B, len(self.prompts)] (normalized values). Masks are not used here
+        (accepted for interface compatibility with the research detector)."""
         enc = self.encoder(image)
         x = self.neck(enc)
         b = len(x)
@@ -102,6 +110,9 @@ def build_detector(encoder, encoder_weights=None, medsam_checkpoint=None):
 def load_detector(path, map_location='cpu'):
     """Rebuild a trained detector from a checkpoint written by ``protocouncil.train_detector``."""
     ck = torch.load(path, map_location=map_location, weights_only=False)
-    det = Detector(build_encoder(ck['encoder']), prompts=ck['prompts'])
+    if ck.get('kind') == 'research':  # exported by research_detector.export (exact paper recipe)
+        from research_detector.export import load
+        return load(ck), ck
+    det = Detector(build_encoder(ck['encoder']), prompts=ck['prompts'], num_classes=ck.get('num_classes', NUM_CLASSES))
     det.load_state_dict(ck['state_dict'], strict=True)
     return det, ck
