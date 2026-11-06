@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+# local data, weights and outputs (never commit patient data or checkpoints)
+data/
+checkpoints/
+runs/
+*.pth
+*.pt
+*.npy
+*.npz
+wandb/

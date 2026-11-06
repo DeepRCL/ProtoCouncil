@@ -1,0 +1,20 @@
+# Backbone adaptation of DINOv3 ViT-L/16 before detector training: full backbone + 1x1 heatmap head,
+# needle-track involvement loss, selection by validation all-cancer AUROC of the needle-track heatmap.
+encoder: dinov3
+n_folds: 5
+exclude_benign_from_positive_patients: true
+seed: 30
+epochs: 35
+warmup_epochs: 5
+batch_size: 8
+num_workers: 8
+image_size: 256
+mask_size: 16
+augment: translate,random_crop
+lr: 1.0e-4            # heatmap head
+encoder_lr: 1.0e-5    # backbone
+weight_decay: 0.01
+precision: bf16
+clip_grad: 1.0
+pos_weight: 8.0
+entropy_weight: 0.01

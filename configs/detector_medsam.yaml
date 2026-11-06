@@ -1,0 +1,23 @@
+# Prompt-conditioned detector with the MedSAM ViT-B encoder (adapters trained, MedSAM weights frozen).
+encoder: medsam
+medsam_checkpoint: checkpoints/medsam_vit_b.pth   # MedSAM release: image encoder, prompt encoder, mask decoder
+encoder_weights: null                             # defaults to medsam_checkpoint
+init_decoders_from: null
+n_folds: 5
+exclude_benign_from_positive_patients: true       # training split only
+seed: 30
+epochs: 35
+warmup_epochs: 5
+batch_size: 8
+num_workers: 8
+image_size: 256
+mask_size: 64
+augment: translate
+lr: 1.0e-5            # decoders and prompt MLPs
+encoder_lr: 1.0e-5    # encoder adapters
+weight_decay: 0.0
+precision: bf16
+clip_grad: 1.0
+pos_weight: 1.0       # involvement loss weight of cancer cores
+entropy_weight: 0.01
+class_weight: 1.0     # weight of the three-class cross-entropy

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protocouncil"
+version = "1.0.0"
+description = "ProtoCouncil: multi-encoder anatomical prototypes for prostate cancer detection in micro-ultrasound"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["torch>=2.4", "torchvision>=0.19", "numpy", "pandas", "scipy", "scikit-learn", "pillow", "pyyaml",
+                "einops", "timm", "matplotlib"]
+
+[tool.setuptools.packages.find]
+include = ["protocouncil*"]
+
+[tool.setuptools.package-data]
+"protocouncil.models.sam" = ["LICENSE"]
+"protocouncil.models.vjepa" = ["LICENSE"]

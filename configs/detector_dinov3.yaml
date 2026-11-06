@@ -1,0 +1,25 @@
+# Prompt-conditioned detector with the DINOv3 ViT-L/16 encoder (fully fine-tuned, starting from the adapted backbone).
+# Pass the adapted backbone with --encoder-weights and, as in the paper, initialize the decoders from the MedSAM
+# detector of the same fold with --init-decoders-from runs/detectors/medsam/fold<k>/best.pth.
+encoder: dinov3
+medsam_checkpoint: checkpoints/medsam_vit_b.pth   # initializes prompt encoder and mask decoder
+encoder_weights: null
+init_decoders_from: null
+n_folds: 5
+exclude_benign_from_positive_patients: true
+seed: 30
+epochs: 35
+warmup_epochs: 5
+batch_size: 8
+num_workers: 8
+image_size: 256
+mask_size: 64
+augment: translate
+lr: 1.0e-4            # 1x1 neck, decoders and prompt MLPs
+encoder_lr: 1.0e-5    # backbone
+weight_decay: 1.0e-3
+precision: bf16
+clip_grad: 1.0
+pos_weight: 1.0
+entropy_weight: 0.01
+class_weight: 1.0
