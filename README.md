@@ -9,7 +9,7 @@ Hannes Cash, Ferdinand Luger, Adam Kinnaird, Brian Wodlinger, Parvin Mousavi<sup
 
 <sub>&#8224; Co-senior authors.</sub>
 
-[![arXiv](https://img.shields.io/badge/arXiv-coming%20soon-b31b1b.svg)](https://arxiv.org/abs/XXXX.XXXXX)
+[![arXiv](https://img.shields.io/badge/arXiv-2611.09058-b31b1b.svg)](https://arxiv.org/abs/2611.09058)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 </div>
 
